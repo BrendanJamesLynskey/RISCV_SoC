@@ -222,21 +222,11 @@ module riscv_soc_top
     logic [DATA_W-1:0]   periph_rdata;
 
     // Interrupt signals
-    logic [N_EXT_IRQ-1:0] irq_sources;
     logic                  meip;
     logic                  timer_irq;
-    logic                  uart_tx_irq, uart_rx_irq;
+    logic                  uart_rx_irq;
     logic                  gpio_irq;
     logic [3:0]            dma_irq;
-
-    assign irq_sources[IRQ_TIMER]   = timer_irq;
-    assign irq_sources[IRQ_UART_TX] = uart_tx_irq;
-    assign irq_sources[IRQ_UART_RX] = uart_rx_irq;
-    assign irq_sources[IRQ_GPIO]    = gpio_irq;
-    assign irq_sources[IRQ_DMA_CH0] = dma_irq[0];
-    assign irq_sources[IRQ_DMA_CH1] = dma_irq[1];
-    assign irq_sources[IRQ_DMA_CH2] = dma_irq[2];
-    assign irq_sources[IRQ_DMA_CH3] = dma_irq[3];
 
     // =========================================================================
     // CPU Subsystem (BRV32P core + L1 caches + AXI bridges)
@@ -1076,38 +1066,30 @@ module riscv_soc_top
     );
 
     // =========================================================================
-    // PLIC — Platform-Level Interrupt Controller
+    // Peripheral Subsystem (GPIO, UART, Timer, PLIC)
     // =========================================================================
-    plic #(
-        .N_SOURCES (N_EXT_IRQ),
-        .ADDR_W    (ADDR_W),
-        .DATA_W    (DATA_W)
-    ) u_plic (
-        .clk         (clk),
-        .srst        (srst),
-        .irq_sources (irq_sources),
-        .meip        (meip),
-        .reg_wr_en   (1'b0),   // TODO: connect via peripheral bridge sub-decode
-        .reg_rd_en   (1'b0),
-        .reg_addr    ('0),
-        .reg_wdata   ('0),
-        .reg_rdata   ()
-    );
+    assign dma_irq = {3'b0, bridge_dma_irq};
 
-    // =========================================================================
-    // Peripheral stubs (GPIO, UART, Timer IRQ sources)
-    // =========================================================================
-    // In the full build, these are instantiated from the BRV32P repo's
-    // periph/ directory. Here we provide tie-offs for standalone simulation.
-    assign timer_irq   = 1'b0;
-    assign uart_tx_irq = 1'b0;
-    assign uart_rx_irq = 1'b0;
-    assign gpio_irq    = 1'b0;
-    assign dma_irq     = {3'b0, bridge_dma_irq};
-    assign gpio_out    = '0;
-    assign gpio_oe     = '0;
-    assign uart_tx     = 1'b1;  // idle high
-    assign periph_rdata = '0;
+    periph_subsystem u_periph_subsystem (
+        .clk          (clk),
+        .srst         (srst),
+        .periph_wr_en (periph_wr_en),
+        .periph_rd_en (periph_rd_en),
+        .periph_addr  (periph_addr),
+        .periph_wdata (periph_wdata),
+        .periph_wstrb (periph_wstrb),
+        .periph_rdata (periph_rdata),
+        .gpio_in      (gpio_in),
+        .gpio_out     (gpio_out),
+        .gpio_oe      (gpio_oe),
+        .uart_rx      (uart_rx),
+        .uart_tx      (uart_tx),
+        .dma_irq      (dma_irq),
+        .timer_irq    (timer_irq),
+        .uart_rx_irq  (uart_rx_irq),
+        .gpio_irq     (gpio_irq),
+        .meip         (meip)
+    );
 
     // Slaves 3 and 4 are now connected to dma_iommu_bridge above.
 
