@@ -200,13 +200,70 @@ module riscv_soc_top #(
     // =========================================================================
     // AXI4 Crossbar (from AXI4_Crossbar repo)
     // =========================================================================
-    // The crossbar connects 3 masters to 5 slaves with full AXI4 protocol.
-    //
-    // INTEGRATION NOTE: Instantiate axi_xbar_top with:
-    //   .N_MASTERS(3), .N_SLAVES(5)
-    //   Address map configured per soc_pkg
-    //
-    // For simulation, slave ports are wired directly to SRAM/bridge modules.
+    axi_xbar_top u_xbar (
+        .clk            (clk),
+        .srst           (srst),
+        // Master side
+        .m_awvalid      (m_awvalid),
+        .m_awready      (m_awready),
+        .m_awid_flat    (m_awid),
+        .m_awaddr_flat  (m_awaddr),
+        .m_awlen_flat   (m_awlen),
+        .m_awsize_flat  (m_awsize),
+        .m_awburst_flat (m_awburst),
+        .m_wvalid       (m_wvalid),
+        .m_wready       (m_wready),
+        .m_wdata_flat   (m_wdata),
+        .m_wstrb_flat   (m_wstrb),
+        .m_wlast        (m_wlast),
+        .m_bvalid       (m_bvalid),
+        .m_bready       (m_bready),
+        .m_bid_flat     (m_bid),
+        .m_bresp_flat   (m_bresp),
+        .m_arvalid      (m_arvalid),
+        .m_arready      (m_arready),
+        .m_arid_flat    (m_arid),
+        .m_araddr_flat  (m_araddr),
+        .m_arlen_flat   (m_arlen),
+        .m_arsize_flat  (m_arsize),
+        .m_arburst_flat (m_arburst),
+        .m_rvalid       (m_rvalid),
+        .m_rready       (m_rready),
+        .m_rid_flat     (m_rid),
+        .m_rdata_flat   (m_rdata),
+        .m_rresp_flat   (m_rresp),
+        .m_rlast        (m_rlast),
+        // Slave side
+        .s_awvalid      (s_awvalid),
+        .s_awready      (s_awready),
+        .s_awid_flat    (s_awid),
+        .s_awaddr_flat  (s_awaddr),
+        .s_awlen_flat   (s_awlen),
+        .s_awsize_flat  (s_awsize),
+        .s_awburst_flat (s_awburst),
+        .s_wvalid       (s_wvalid),
+        .s_wready       (s_wready),
+        .s_wdata_flat   (s_wdata),
+        .s_wstrb_flat   (s_wstrb),
+        .s_wlast        (s_wlast),
+        .s_bvalid       (s_bvalid),
+        .s_bready       (s_bready),
+        .s_bid_flat     (s_bid),
+        .s_bresp_flat   (s_bresp),
+        .s_arvalid      (s_arvalid),
+        .s_arready      (s_arready),
+        .s_arid_flat    (s_arid),
+        .s_araddr_flat  (s_araddr),
+        .s_arlen_flat   (s_arlen),
+        .s_arsize_flat  (s_arsize),
+        .s_arburst_flat (s_arburst),
+        .s_rvalid       (s_rvalid),
+        .s_rready       (s_rready),
+        .s_rid_flat     (s_rid),
+        .s_rdata_flat   (s_rdata),
+        .s_rresp_flat   (s_rresp),
+        .s_rlast        (s_rlast)
+    );
 
     // =========================================================================
     // Instruction SRAM (Slave 0)
