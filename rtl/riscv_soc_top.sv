@@ -629,26 +629,111 @@ module riscv_soc_top
     );
 
     // =========================================================================
-    // DMA master (Master 2) — tie off until DMA controller is integrated
+    // DMA + IOMMU Bridge (Master 2, Slaves 3 & 4)
     // =========================================================================
-    assign m_awvalid[2]                   = 1'b0;
-    assign m_awaddr[2*ADDR_W +: ADDR_W]  = '0;
-    assign m_awid[2*ID_W +: ID_W]        = '0;
-    assign m_awlen[2*8 +: 8]             = '0;
-    assign m_awsize[2*3 +: 3]            = '0;
-    assign m_awburst[2*2 +: 2]           = '0;
-    assign m_wvalid[2]                   = 1'b0;
-    assign m_wdata[2*DATA_W +: DATA_W]   = '0;
-    assign m_wstrb[2*STRB_W +: STRB_W]  = '0;
-    assign m_wlast[2]                    = 1'b0;
-    assign m_bready[2]                   = 1'b1;
-    assign m_arvalid[2]                  = 1'b0;
-    assign m_araddr[2*ADDR_W +: ADDR_W] = '0;
-    assign m_arid[2*ID_W +: ID_W]       = '0;
-    assign m_arlen[2*8 +: 8]            = '0;
-    assign m_arsize[2*3 +: 3]           = '0;
-    assign m_arburst[2*2 +: 2]          = '0;
-    assign m_rready[2]                   = 1'b1;
+    logic bridge_dma_irq;
+    logic bridge_iommu_fault_irq;
+
+    dma_iommu_bridge u_dma_iommu_bridge (
+        .clk             (clk),
+        .srst            (srst),
+        // AXI master → crossbar M2
+        .m2_awvalid      (m_awvalid[2]),
+        .m2_awready      (m_awready[2]),
+        .m2_awaddr       (m_awaddr[2*ADDR_W +: ADDR_W]),
+        .m2_awid         (m_awid[2*ID_W +: ID_W]),
+        .m2_awlen        (m_awlen[2*8 +: 8]),
+        .m2_awsize       (m_awsize[2*3 +: 3]),
+        .m2_awburst      (m_awburst[2*2 +: 2]),
+        .m2_wvalid       (m_wvalid[2]),
+        .m2_wready       (m_wready[2]),
+        .m2_wdata        (m_wdata[2*DATA_W +: DATA_W]),
+        .m2_wstrb        (m_wstrb[2*STRB_W +: STRB_W]),
+        .m2_wlast        (m_wlast[2]),
+        .m2_bvalid       (m_bvalid[2]),
+        .m2_bready       (m_bready[2]),
+        .m2_bid          (m_bid[2*ID_W +: ID_W]),
+        .m2_bresp        (m_bresp[2*2 +: 2]),
+        .m2_arvalid      (m_arvalid[2]),
+        .m2_arready      (m_arready[2]),
+        .m2_araddr       (m_araddr[2*ADDR_W +: ADDR_W]),
+        .m2_arid         (m_arid[2*ID_W +: ID_W]),
+        .m2_arlen        (m_arlen[2*8 +: 8]),
+        .m2_arsize       (m_arsize[2*3 +: 3]),
+        .m2_arburst      (m_arburst[2*2 +: 2]),
+        .m2_rvalid       (m_rvalid[2]),
+        .m2_rready       (m_rready[2]),
+        .m2_rdata        (m_rdata[2*DATA_W +: DATA_W]),
+        .m2_rid          (m_rid[2*ID_W +: ID_W]),
+        .m2_rresp        (m_rresp[2*2 +: 2]),
+        .m2_rlast        (m_rlast[2]),
+        // AXI slave ← crossbar S3 (DMA regs)
+        .s3_awvalid      (s_awvalid[3]),
+        .s3_awready      (s_awready[3]),
+        .s3_awaddr       (s_awaddr[3*ADDR_W +: ADDR_W]),
+        .s3_awid         (s_awid[3*SID_W +: SID_W]),
+        .s3_awlen        (s_awlen[3*8 +: 8]),
+        .s3_awsize       (s_awsize[3*3 +: 3]),
+        .s3_awburst      (s_awburst[3*2 +: 2]),
+        .s3_wvalid       (s_wvalid[3]),
+        .s3_wready       (s_wready[3]),
+        .s3_wdata        (s_wdata[3*DATA_W +: DATA_W]),
+        .s3_wstrb        (s_wstrb[3*STRB_W +: STRB_W]),
+        .s3_wlast        (s_wlast[3]),
+        .s3_bvalid       (s_bvalid[3]),
+        .s3_bready       (s_bready[3]),
+        .s3_bid          (s_bid[3*SID_W +: SID_W]),
+        .s3_bresp        (s_bresp[3*2 +: 2]),
+        .s3_arvalid      (s_arvalid[3]),
+        .s3_arready      (s_arready[3]),
+        .s3_araddr       (s_araddr[3*ADDR_W +: ADDR_W]),
+        .s3_arid         (s_arid[3*SID_W +: SID_W]),
+        .s3_arlen        (s_arlen[3*8 +: 8]),
+        .s3_arsize       (s_arsize[3*3 +: 3]),
+        .s3_arburst      (s_arburst[3*2 +: 2]),
+        .s3_rvalid       (s_rvalid[3]),
+        .s3_rready       (s_rready[3]),
+        .s3_rdata        (s_rdata[3*DATA_W +: DATA_W]),
+        .s3_rid          (s_rid[3*SID_W +: SID_W]),
+        .s3_rresp        (s_rresp[3*2 +: 2]),
+        .s3_rlast        (s_rlast[3]),
+        // AXI slave ← crossbar S4 (IOMMU regs)
+        .s4_awvalid      (s_awvalid[4]),
+        .s4_awready      (s_awready[4]),
+        .s4_awaddr       (s_awaddr[4*ADDR_W +: ADDR_W]),
+        .s4_awid         (s_awid[4*SID_W +: SID_W]),
+        .s4_awlen        (s_awlen[4*8 +: 8]),
+        .s4_awsize       (s_awsize[4*3 +: 3]),
+        .s4_awburst      (s_awburst[4*2 +: 2]),
+        .s4_wvalid       (s_wvalid[4]),
+        .s4_wready       (s_wready[4]),
+        .s4_wdata        (s_wdata[4*DATA_W +: DATA_W]),
+        .s4_wstrb        (s_wstrb[4*STRB_W +: STRB_W]),
+        .s4_wlast        (s_wlast[4]),
+        .s4_bvalid       (s_bvalid[4]),
+        .s4_bready       (s_bready[4]),
+        .s4_bid          (s_bid[4*SID_W +: SID_W]),
+        .s4_bresp        (s_bresp[4*2 +: 2]),
+        .s4_arvalid      (s_arvalid[4]),
+        .s4_arready      (s_arready[4]),
+        .s4_araddr       (s_araddr[4*ADDR_W +: ADDR_W]),
+        .s4_arid         (s_arid[4*SID_W +: SID_W]),
+        .s4_arlen        (s_arlen[4*8 +: 8]),
+        .s4_arsize       (s_arsize[4*3 +: 3]),
+        .s4_arburst      (s_arburst[4*2 +: 2]),
+        .s4_rvalid       (s_rvalid[4]),
+        .s4_rready       (s_rready[4]),
+        .s4_rdata        (s_rdata[4*DATA_W +: DATA_W]),
+        .s4_rid          (s_rid[4*SID_W +: SID_W]),
+        .s4_rresp        (s_rresp[4*2 +: 2]),
+        .s4_rlast        (s_rlast[4]),
+        // DMA peripheral handshake (no external DMA requests)
+        .dreq            (4'b0),
+        .dack            (),
+        // Interrupts
+        .dma_irq         (bridge_dma_irq),
+        .iommu_fault_irq (bridge_iommu_fault_irq)
+    );
 
     // =========================================================================
     // AXI4 Crossbar (from AXI4_Crossbar repo)
@@ -879,31 +964,12 @@ module riscv_soc_top
     assign uart_tx_irq = 1'b0;
     assign uart_rx_irq = 1'b0;
     assign gpio_irq    = 1'b0;
-    assign dma_irq     = 4'b0;
+    assign dma_irq     = {3'b0, bridge_dma_irq};
     assign gpio_out    = '0;
     assign gpio_oe     = '0;
     assign uart_tx     = 1'b1;  // idle high
     assign periph_rdata = '0;
 
-    // =========================================================================
-    // Default slave tie-offs (Slaves 3, 4 — DMA regs, IOMMU regs)
-    // =========================================================================
-    // These will be connected to DMA and IOMMU register interfaces in full build.
-    genvar si;
-    generate
-        for (si = 3; si < N_SLAVES; si++) begin : gen_slave_tieoff
-            assign s_awready[si] = 1'b1;
-            assign s_wready[si]  = 1'b1;
-            assign s_bvalid[si]  = 1'b0;
-            assign s_bid[si*SID_W +: SID_W] = '0;
-            assign s_bresp[si*2 +: 2] = 2'b00;
-            assign s_arready[si] = 1'b1;
-            assign s_rvalid[si]  = 1'b0;
-            assign s_rdata[si*DATA_W +: DATA_W] = '0;
-            assign s_rid[si*SID_W +: SID_W] = '0;
-            assign s_rresp[si*2 +: 2] = 2'b00;
-            assign s_rlast[si]   = 1'b0;
-        end
-    endgenerate
+    // Slaves 3 and 4 are now connected to dma_iommu_bridge above.
 
 endmodule
