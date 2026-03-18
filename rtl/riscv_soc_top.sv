@@ -112,7 +112,10 @@ module riscv_soc_top
     output logic [DATA_W-1:0] cpu_d_rdata,
     output logic [ID_W-1:0]   cpu_d_rid,
     output logic [1:0]        cpu_d_rresp,
-    output logic              cpu_d_rlast
+    output logic              cpu_d_rlast,
+
+    // CPU enable: 1 = internal CPU drives M0/M1, 0 = external ports drive M0/M1
+    input  logic              cpu_enable
 );
 
     // =========================================================================
@@ -236,27 +239,163 @@ module riscv_soc_top
     assign irq_sources[IRQ_DMA_CH3] = dma_irq[3];
 
     // =========================================================================
-    // CPU Core (BRV32P — 5-stage pipelined RV32IMC)
+    // CPU Subsystem (BRV32P core + L1 caches + AXI bridges)
     // =========================================================================
-    // The CPU core from RISCV_RV32IMC_5stage provides:
-    //   - Instruction AXI4-Lite port (I-cache miss path)
-    //   - Data AXI4-Lite port (D-cache miss path)
-    //
-    // In the full SoC, these would be wired through the MMU for virtual
-    // address translation before reaching the crossbar. For simulation
-    // without the full CPU instantiation, we provide stub master ports.
-    //
-    // INTEGRATION NOTE: Replace the stub assignments below with actual
-    // CPU core instantiation when assembling the final build:
-    //
-    //   brv32p_soc u_cpu (
-    //       .clk       (clk),
-    //       .srst      (srst),
-    //       .meip      (meip),
-    //       // I-port AXI → m_*[0]
-    //       // D-port AXI → m_*[1]
-    //       ...
-    //   );
+    // When cpu_enable=1, the internal CPU drives M0 (I-cache) and M1 (D-cache).
+    // When cpu_enable=0, external ports drive them (for testbench use).
+
+    // Internal CPU subsystem AXI signals
+    logic              int_i_awvalid, int_i_wvalid, int_i_bready;
+    logic              int_i_arvalid, int_i_rready;
+    logic [ADDR_W-1:0] int_i_awaddr, int_i_araddr;
+    logic [ID_W-1:0]   int_i_awid, int_i_arid;
+    logic [7:0]        int_i_awlen, int_i_arlen;
+    logic [2:0]        int_i_awsize, int_i_arsize;
+    logic [1:0]        int_i_awburst, int_i_arburst;
+    logic [DATA_W-1:0] int_i_wdata;
+    logic [STRB_W-1:0] int_i_wstrb;
+    logic              int_i_wlast;
+
+    logic              int_d_awvalid, int_d_wvalid, int_d_bready;
+    logic              int_d_arvalid, int_d_rready;
+    logic [ADDR_W-1:0] int_d_awaddr, int_d_araddr;
+    logic [ID_W-1:0]   int_d_awid, int_d_arid;
+    logic [7:0]        int_d_awlen, int_d_arlen;
+    logic [2:0]        int_d_awsize, int_d_arsize;
+    logic [1:0]        int_d_awburst, int_d_arburst;
+    logic [DATA_W-1:0] int_d_wdata;
+    logic [STRB_W-1:0] int_d_wstrb;
+    logic              int_d_wlast;
+
+    cpu_subsystem u_cpu_subsystem (
+        .clk        (clk),
+        .srst       (srst),
+        // I-cache AXI master
+        .ic_awvalid (int_i_awvalid),
+        .ic_awready (cpu_i_awready),
+        .ic_awaddr  (int_i_awaddr),
+        .ic_awid    (int_i_awid),
+        .ic_awlen   (int_i_awlen),
+        .ic_awsize  (int_i_awsize),
+        .ic_awburst (int_i_awburst),
+        .ic_wvalid  (int_i_wvalid),
+        .ic_wready  (cpu_i_wready),
+        .ic_wdata   (int_i_wdata),
+        .ic_wstrb   (int_i_wstrb),
+        .ic_wlast   (int_i_wlast),
+        .ic_bvalid  (cpu_i_bvalid),
+        .ic_bready  (int_i_bready),
+        .ic_bid     (cpu_i_bid),
+        .ic_bresp   (cpu_i_bresp),
+        .ic_arvalid (int_i_arvalid),
+        .ic_arready (cpu_i_arready),
+        .ic_araddr  (int_i_araddr),
+        .ic_arid    (int_i_arid),
+        .ic_arlen   (int_i_arlen),
+        .ic_arsize  (int_i_arsize),
+        .ic_arburst (int_i_arburst),
+        .ic_rvalid  (cpu_i_rvalid),
+        .ic_rready  (int_i_rready),
+        .ic_rdata   (cpu_i_rdata),
+        .ic_rid     (cpu_i_rid),
+        .ic_rresp   (cpu_i_rresp),
+        .ic_rlast   (cpu_i_rlast),
+        // D-cache AXI master
+        .dc_awvalid (int_d_awvalid),
+        .dc_awready (cpu_d_awready),
+        .dc_awaddr  (int_d_awaddr),
+        .dc_awid    (int_d_awid),
+        .dc_awlen   (int_d_awlen),
+        .dc_awsize  (int_d_awsize),
+        .dc_awburst (int_d_awburst),
+        .dc_wvalid  (int_d_wvalid),
+        .dc_wready  (cpu_d_wready),
+        .dc_wdata   (int_d_wdata),
+        .dc_wstrb   (int_d_wstrb),
+        .dc_wlast   (int_d_wlast),
+        .dc_bvalid  (cpu_d_bvalid),
+        .dc_bready  (int_d_bready),
+        .dc_bid     (cpu_d_bid),
+        .dc_bresp   (cpu_d_bresp),
+        .dc_arvalid (int_d_arvalid),
+        .dc_arready (cpu_d_arready),
+        .dc_araddr  (int_d_araddr),
+        .dc_arid    (int_d_arid),
+        .dc_arlen   (int_d_arlen),
+        .dc_arsize  (int_d_arsize),
+        .dc_arburst (int_d_arburst),
+        .dc_rvalid  (cpu_d_rvalid),
+        .dc_rready  (int_d_rready),
+        .dc_rdata   (cpu_d_rdata),
+        .dc_rid     (cpu_d_rid),
+        .dc_rresp   (cpu_d_rresp),
+        .dc_rlast   (cpu_d_rlast),
+        // Interrupts
+        .meip       (meip),
+        .timer_irq  (timer_irq)
+    );
+
+    // Muxed I-port signals: cpu_enable selects internal CPU vs external ports
+    logic              sel_i_awvalid, sel_i_wvalid, sel_i_bready;
+    logic              sel_i_arvalid, sel_i_rready;
+    logic [ADDR_W-1:0] sel_i_awaddr, sel_i_araddr;
+    logic [ID_W-1:0]   sel_i_awid, sel_i_arid;
+    logic [7:0]        sel_i_awlen, sel_i_arlen;
+    logic [2:0]        sel_i_awsize, sel_i_arsize;
+    logic [1:0]        sel_i_awburst, sel_i_arburst;
+    logic [DATA_W-1:0] sel_i_wdata;
+    logic [STRB_W-1:0] sel_i_wstrb;
+    logic              sel_i_wlast;
+
+    assign sel_i_awvalid = cpu_enable ? int_i_awvalid : cpu_i_awvalid;
+    assign sel_i_awaddr  = cpu_enable ? int_i_awaddr  : cpu_i_awaddr;
+    assign sel_i_awid    = cpu_enable ? int_i_awid    : cpu_i_awid;
+    assign sel_i_awlen   = cpu_enable ? int_i_awlen   : cpu_i_awlen;
+    assign sel_i_awsize  = cpu_enable ? int_i_awsize  : cpu_i_awsize;
+    assign sel_i_awburst = cpu_enable ? int_i_awburst : cpu_i_awburst;
+    assign sel_i_wvalid  = cpu_enable ? int_i_wvalid  : cpu_i_wvalid;
+    assign sel_i_wdata   = cpu_enable ? int_i_wdata   : cpu_i_wdata;
+    assign sel_i_wstrb   = cpu_enable ? int_i_wstrb   : cpu_i_wstrb;
+    assign sel_i_wlast   = cpu_enable ? int_i_wlast   : cpu_i_wlast;
+    assign sel_i_bready  = cpu_enable ? int_i_bready  : cpu_i_bready;
+    assign sel_i_arvalid = cpu_enable ? int_i_arvalid : cpu_i_arvalid;
+    assign sel_i_araddr  = cpu_enable ? int_i_araddr  : cpu_i_araddr;
+    assign sel_i_arid    = cpu_enable ? int_i_arid    : cpu_i_arid;
+    assign sel_i_arlen   = cpu_enable ? int_i_arlen   : cpu_i_arlen;
+    assign sel_i_arsize  = cpu_enable ? int_i_arsize  : cpu_i_arsize;
+    assign sel_i_arburst = cpu_enable ? int_i_arburst : cpu_i_arburst;
+    assign sel_i_rready  = cpu_enable ? int_i_rready  : cpu_i_rready;
+
+    // Muxed D-port signals
+    logic              sel_d_awvalid, sel_d_wvalid, sel_d_bready;
+    logic              sel_d_arvalid, sel_d_rready;
+    logic [ADDR_W-1:0] sel_d_awaddr, sel_d_araddr;
+    logic [ID_W-1:0]   sel_d_awid, sel_d_arid;
+    logic [7:0]        sel_d_awlen, sel_d_arlen;
+    logic [2:0]        sel_d_awsize, sel_d_arsize;
+    logic [1:0]        sel_d_awburst, sel_d_arburst;
+    logic [DATA_W-1:0] sel_d_wdata;
+    logic [STRB_W-1:0] sel_d_wstrb;
+    logic              sel_d_wlast;
+
+    assign sel_d_awvalid = cpu_enable ? int_d_awvalid : cpu_d_awvalid;
+    assign sel_d_awaddr  = cpu_enable ? int_d_awaddr  : cpu_d_awaddr;
+    assign sel_d_awid    = cpu_enable ? int_d_awid    : cpu_d_awid;
+    assign sel_d_awlen   = cpu_enable ? int_d_awlen   : cpu_d_awlen;
+    assign sel_d_awsize  = cpu_enable ? int_d_awsize  : cpu_d_awsize;
+    assign sel_d_awburst = cpu_enable ? int_d_awburst : cpu_d_awburst;
+    assign sel_d_wvalid  = cpu_enable ? int_d_wvalid  : cpu_d_wvalid;
+    assign sel_d_wdata   = cpu_enable ? int_d_wdata   : cpu_d_wdata;
+    assign sel_d_wstrb   = cpu_enable ? int_d_wstrb   : cpu_d_wstrb;
+    assign sel_d_wlast   = cpu_enable ? int_d_wlast   : cpu_d_wlast;
+    assign sel_d_bready  = cpu_enable ? int_d_bready  : cpu_d_bready;
+    assign sel_d_arvalid = cpu_enable ? int_d_arvalid : cpu_d_arvalid;
+    assign sel_d_araddr  = cpu_enable ? int_d_araddr  : cpu_d_araddr;
+    assign sel_d_arid    = cpu_enable ? int_d_arid    : cpu_d_arid;
+    assign sel_d_arlen   = cpu_enable ? int_d_arlen   : cpu_d_arlen;
+    assign sel_d_arsize  = cpu_enable ? int_d_arsize  : cpu_d_arsize;
+    assign sel_d_arburst = cpu_enable ? int_d_arburst : cpu_d_arburst;
+    assign sel_d_rready  = cpu_enable ? int_d_rready  : cpu_d_rready;
 
     // =========================================================================
     // I-MMU (Master 0): CPU I-port → MMU → Crossbar
@@ -357,32 +496,32 @@ module riscv_soc_top
     cpu_axi_adapter #(.IS_IPORT(1'b1)) u_immu_adapter (
         .clk              (clk),
         .srst             (srst),
-        // CPU side
-        .cpu_awvalid      (cpu_i_awvalid),
+        // CPU side (muxed: internal CPU or external ports)
+        .cpu_awvalid      (sel_i_awvalid),
         .cpu_awready      (cpu_i_awready),
-        .cpu_awaddr       (cpu_i_awaddr),
-        .cpu_awid         (cpu_i_awid),
-        .cpu_awlen        (cpu_i_awlen),
-        .cpu_awsize       (cpu_i_awsize),
-        .cpu_awburst      (cpu_i_awburst),
-        .cpu_wvalid       (cpu_i_wvalid),
+        .cpu_awaddr       (sel_i_awaddr),
+        .cpu_awid         (sel_i_awid),
+        .cpu_awlen        (sel_i_awlen),
+        .cpu_awsize       (sel_i_awsize),
+        .cpu_awburst      (sel_i_awburst),
+        .cpu_wvalid       (sel_i_wvalid),
         .cpu_wready       (cpu_i_wready),
-        .cpu_wdata        (cpu_i_wdata),
-        .cpu_wstrb        (cpu_i_wstrb),
-        .cpu_wlast        (cpu_i_wlast),
+        .cpu_wdata        (sel_i_wdata),
+        .cpu_wstrb        (sel_i_wstrb),
+        .cpu_wlast        (sel_i_wlast),
         .cpu_bvalid       (cpu_i_bvalid),
-        .cpu_bready       (cpu_i_bready),
+        .cpu_bready       (sel_i_bready),
         .cpu_bid          (cpu_i_bid),
         .cpu_bresp        (cpu_i_bresp),
-        .cpu_arvalid      (cpu_i_arvalid),
+        .cpu_arvalid      (sel_i_arvalid),
         .cpu_arready      (cpu_i_arready),
-        .cpu_araddr       (cpu_i_araddr),
-        .cpu_arid         (cpu_i_arid),
-        .cpu_arlen        (cpu_i_arlen),
-        .cpu_arsize       (cpu_i_arsize),
-        .cpu_arburst      (cpu_i_arburst),
+        .cpu_araddr       (sel_i_araddr),
+        .cpu_arid         (sel_i_arid),
+        .cpu_arlen        (sel_i_arlen),
+        .cpu_arsize       (sel_i_arsize),
+        .cpu_arburst      (sel_i_arburst),
         .cpu_rvalid       (cpu_i_rvalid),
-        .cpu_rready       (cpu_i_rready),
+        .cpu_rready       (sel_i_rready),
         .cpu_rdata        (cpu_i_rdata),
         .cpu_rid          (cpu_i_rid),
         .cpu_rresp        (cpu_i_rresp),
@@ -542,32 +681,32 @@ module riscv_soc_top
     cpu_axi_adapter #(.IS_IPORT(1'b0)) u_dmmu_adapter (
         .clk              (clk),
         .srst             (srst),
-        // CPU side
-        .cpu_awvalid      (cpu_d_awvalid),
+        // CPU side (muxed: internal CPU or external ports)
+        .cpu_awvalid      (sel_d_awvalid),
         .cpu_awready      (cpu_d_awready),
-        .cpu_awaddr       (cpu_d_awaddr),
-        .cpu_awid         (cpu_d_awid),
-        .cpu_awlen        (cpu_d_awlen),
-        .cpu_awsize       (cpu_d_awsize),
-        .cpu_awburst      (cpu_d_awburst),
-        .cpu_wvalid       (cpu_d_wvalid),
+        .cpu_awaddr       (sel_d_awaddr),
+        .cpu_awid         (sel_d_awid),
+        .cpu_awlen        (sel_d_awlen),
+        .cpu_awsize       (sel_d_awsize),
+        .cpu_awburst      (sel_d_awburst),
+        .cpu_wvalid       (sel_d_wvalid),
         .cpu_wready       (cpu_d_wready),
-        .cpu_wdata        (cpu_d_wdata),
-        .cpu_wstrb        (cpu_d_wstrb),
-        .cpu_wlast        (cpu_d_wlast),
+        .cpu_wdata        (sel_d_wdata),
+        .cpu_wstrb        (sel_d_wstrb),
+        .cpu_wlast        (sel_d_wlast),
         .cpu_bvalid       (cpu_d_bvalid),
-        .cpu_bready       (cpu_d_bready),
+        .cpu_bready       (sel_d_bready),
         .cpu_bid          (cpu_d_bid),
         .cpu_bresp        (cpu_d_bresp),
-        .cpu_arvalid      (cpu_d_arvalid),
+        .cpu_arvalid      (sel_d_arvalid),
         .cpu_arready      (cpu_d_arready),
-        .cpu_araddr       (cpu_d_araddr),
-        .cpu_arid         (cpu_d_arid),
-        .cpu_arlen        (cpu_d_arlen),
-        .cpu_arsize       (cpu_d_arsize),
-        .cpu_arburst      (cpu_d_arburst),
+        .cpu_araddr       (sel_d_araddr),
+        .cpu_arid         (sel_d_arid),
+        .cpu_arlen        (sel_d_arlen),
+        .cpu_arsize       (sel_d_arsize),
+        .cpu_arburst      (sel_d_arburst),
         .cpu_rvalid       (cpu_d_rvalid),
-        .cpu_rready       (cpu_d_rready),
+        .cpu_rready       (sel_d_rready),
         .cpu_rdata        (cpu_d_rdata),
         .cpu_rid          (cpu_d_rid),
         .cpu_rresp        (cpu_d_rresp),
