@@ -32,7 +32,9 @@
 //   PLIC ──► CPU meip
 //
 
-module riscv_soc_top #(
+module riscv_soc_top
+    import soc_pkg::*;
+#(
     parameter INIT_FILE = "firmware.hex"
 )(
     input  logic        clk,
@@ -45,10 +47,73 @@ module riscv_soc_top #(
 
     // UART external pins
     input  logic        uart_rx,
-    output logic        uart_tx
-);
+    output logic        uart_tx,
 
-    import soc_pkg::*;
+    // SATP register (CPU will drive this later; default to 0 for bypass)
+    input  logic [31:0] satp,
+
+    // CPU I-port AXI4 (pre-MMU, virtual addresses)
+    input  logic              cpu_i_awvalid,
+    output logic              cpu_i_awready,
+    input  logic [ADDR_W-1:0] cpu_i_awaddr,
+    input  logic [ID_W-1:0]   cpu_i_awid,
+    input  logic [7:0]        cpu_i_awlen,
+    input  logic [2:0]        cpu_i_awsize,
+    input  logic [1:0]        cpu_i_awburst,
+    input  logic              cpu_i_wvalid,
+    output logic              cpu_i_wready,
+    input  logic [DATA_W-1:0] cpu_i_wdata,
+    input  logic [STRB_W-1:0] cpu_i_wstrb,
+    input  logic              cpu_i_wlast,
+    output logic              cpu_i_bvalid,
+    input  logic              cpu_i_bready,
+    output logic [ID_W-1:0]   cpu_i_bid,
+    output logic [1:0]        cpu_i_bresp,
+    input  logic              cpu_i_arvalid,
+    output logic              cpu_i_arready,
+    input  logic [ADDR_W-1:0] cpu_i_araddr,
+    input  logic [ID_W-1:0]   cpu_i_arid,
+    input  logic [7:0]        cpu_i_arlen,
+    input  logic [2:0]        cpu_i_arsize,
+    input  logic [1:0]        cpu_i_arburst,
+    output logic              cpu_i_rvalid,
+    input  logic              cpu_i_rready,
+    output logic [DATA_W-1:0] cpu_i_rdata,
+    output logic [ID_W-1:0]   cpu_i_rid,
+    output logic [1:0]        cpu_i_rresp,
+    output logic              cpu_i_rlast,
+
+    // CPU D-port AXI4 (pre-MMU, virtual addresses)
+    input  logic              cpu_d_awvalid,
+    output logic              cpu_d_awready,
+    input  logic [ADDR_W-1:0] cpu_d_awaddr,
+    input  logic [ID_W-1:0]   cpu_d_awid,
+    input  logic [7:0]        cpu_d_awlen,
+    input  logic [2:0]        cpu_d_awsize,
+    input  logic [1:0]        cpu_d_awburst,
+    input  logic              cpu_d_wvalid,
+    output logic              cpu_d_wready,
+    input  logic [DATA_W-1:0] cpu_d_wdata,
+    input  logic [STRB_W-1:0] cpu_d_wstrb,
+    input  logic              cpu_d_wlast,
+    output logic              cpu_d_bvalid,
+    input  logic              cpu_d_bready,
+    output logic [ID_W-1:0]   cpu_d_bid,
+    output logic [1:0]        cpu_d_bresp,
+    input  logic              cpu_d_arvalid,
+    output logic              cpu_d_arready,
+    input  logic [ADDR_W-1:0] cpu_d_araddr,
+    input  logic [ID_W-1:0]   cpu_d_arid,
+    input  logic [7:0]        cpu_d_arlen,
+    input  logic [2:0]        cpu_d_arsize,
+    input  logic [1:0]        cpu_d_arburst,
+    output logic              cpu_d_rvalid,
+    input  logic              cpu_d_rready,
+    output logic [DATA_W-1:0] cpu_d_rdata,
+    output logic [ID_W-1:0]   cpu_d_rid,
+    output logic [1:0]        cpu_d_rresp,
+    output logic              cpu_d_rlast
+);
 
     // =========================================================================
     // Reset synchroniser
@@ -193,9 +258,397 @@ module riscv_soc_top #(
     //       ...
     //   );
 
-    // Stub: CPU I-port (Master 0) — driven by testbench in simulation
-    // Stub: CPU D-port (Master 1) — driven by testbench in simulation
-    // Stub: DMA master (Master 2) — driven by DMA controller
+    // =========================================================================
+    // I-MMU (Master 0): CPU I-port → MMU → Crossbar
+    // =========================================================================
+    // Translation interface wires (I-MMU)
+    logic        immu_trans_req_valid;
+    logic        immu_trans_req_ready;
+    logic [31:0] immu_trans_vaddr;
+    logic [1:0]  immu_trans_access_type;
+    logic        immu_trans_priv_mode;
+    logic        immu_trans_resp_valid;
+    logic [31:0] immu_trans_paddr;
+    logic        immu_trans_fault;
+    logic [1:0]  immu_trans_fault_type;
+
+    // PTW AXI wires (I-MMU)
+    logic              immu_ptw_arvalid;
+    logic              immu_ptw_arready;
+    logic [ADDR_W-1:0] immu_ptw_araddr;
+    logic [ID_W-1:0]   immu_ptw_arid;
+    logic [7:0]        immu_ptw_arlen;
+    logic [2:0]        immu_ptw_arsize;
+    logic [1:0]        immu_ptw_arburst;
+    logic              immu_ptw_rvalid;
+    logic              immu_ptw_rready;
+    logic [DATA_W-1:0] immu_ptw_rdata;
+    logic [ID_W-1:0]   immu_ptw_rid;
+    logic [1:0]        immu_ptw_rresp;
+    logic              immu_ptw_rlast;
+
+    // Unused PTW write channel wires (I-MMU)
+    logic              immu_ptw_awvalid;
+    logic              immu_ptw_awready;
+    logic [ADDR_W-1:0] immu_ptw_awaddr;
+    logic [ID_W-1:0]   immu_ptw_awid;
+    logic [7:0]        immu_ptw_awlen;
+    logic [2:0]        immu_ptw_awsize;
+    logic [1:0]        immu_ptw_awburst;
+    logic              immu_ptw_wvalid;
+    logic              immu_ptw_wready;
+    logic [DATA_W-1:0] immu_ptw_wdata;
+    logic [STRB_W-1:0] immu_ptw_wstrb;
+    logic              immu_ptw_wlast;
+    logic              immu_ptw_bvalid;
+    logic              immu_ptw_bready;
+    logic [ID_W-1:0]   immu_ptw_bid;
+    logic [1:0]        immu_ptw_bresp;
+
+    mmu_axi_bridge #(.AXI_ID_W(ID_W)) u_immu_bridge (
+        .clk              (clk),
+        .srst             (srst),
+        .trans_req_valid  (immu_trans_req_valid),
+        .trans_req_ready  (immu_trans_req_ready),
+        .trans_vaddr      (immu_trans_vaddr),
+        .trans_access_type(immu_trans_access_type),
+        .trans_priv_mode  (immu_trans_priv_mode),
+        .trans_resp_valid (immu_trans_resp_valid),
+        .trans_paddr      (immu_trans_paddr),
+        .trans_fault      (immu_trans_fault),
+        .trans_fault_type (immu_trans_fault_type),
+        .ptw_arvalid      (immu_ptw_arvalid),
+        .ptw_arready      (immu_ptw_arready),
+        .ptw_araddr       (immu_ptw_araddr),
+        .ptw_arid         (immu_ptw_arid),
+        .ptw_arlen        (immu_ptw_arlen),
+        .ptw_arsize       (immu_ptw_arsize),
+        .ptw_arburst      (immu_ptw_arburst),
+        .ptw_rvalid       (immu_ptw_rvalid),
+        .ptw_rready       (immu_ptw_rready),
+        .ptw_rdata        (immu_ptw_rdata),
+        .ptw_rid          (immu_ptw_rid),
+        .ptw_rresp        (immu_ptw_rresp),
+        .ptw_rlast        (immu_ptw_rlast),
+        .ptw_awvalid      (immu_ptw_awvalid),
+        .ptw_awready      (1'b0),
+        .ptw_awaddr       (immu_ptw_awaddr),
+        .ptw_awid         (immu_ptw_awid),
+        .ptw_awlen        (immu_ptw_awlen),
+        .ptw_awsize       (immu_ptw_awsize),
+        .ptw_awburst      (immu_ptw_awburst),
+        .ptw_wvalid       (immu_ptw_wvalid),
+        .ptw_wready       (1'b0),
+        .ptw_wdata        (immu_ptw_wdata),
+        .ptw_wstrb        (immu_ptw_wstrb),
+        .ptw_wlast        (immu_ptw_wlast),
+        .ptw_bvalid       (1'b0),
+        .ptw_bready       (immu_ptw_bready),
+        .ptw_bid          ('0),
+        .ptw_bresp        ('0),
+        .satp             (satp),
+        .sfence_valid     (1'b0),
+        .sfence_vaddr     ('0),
+        .sfence_asid      ('0),
+        .mxr              (1'b0),
+        .sum              (1'b0)
+    );
+
+    cpu_axi_adapter #(.IS_IPORT(1'b1)) u_immu_adapter (
+        .clk              (clk),
+        .srst             (srst),
+        // CPU side
+        .cpu_awvalid      (cpu_i_awvalid),
+        .cpu_awready      (cpu_i_awready),
+        .cpu_awaddr       (cpu_i_awaddr),
+        .cpu_awid         (cpu_i_awid),
+        .cpu_awlen        (cpu_i_awlen),
+        .cpu_awsize       (cpu_i_awsize),
+        .cpu_awburst      (cpu_i_awburst),
+        .cpu_wvalid       (cpu_i_wvalid),
+        .cpu_wready       (cpu_i_wready),
+        .cpu_wdata        (cpu_i_wdata),
+        .cpu_wstrb        (cpu_i_wstrb),
+        .cpu_wlast        (cpu_i_wlast),
+        .cpu_bvalid       (cpu_i_bvalid),
+        .cpu_bready       (cpu_i_bready),
+        .cpu_bid          (cpu_i_bid),
+        .cpu_bresp        (cpu_i_bresp),
+        .cpu_arvalid      (cpu_i_arvalid),
+        .cpu_arready      (cpu_i_arready),
+        .cpu_araddr       (cpu_i_araddr),
+        .cpu_arid         (cpu_i_arid),
+        .cpu_arlen        (cpu_i_arlen),
+        .cpu_arsize       (cpu_i_arsize),
+        .cpu_arburst      (cpu_i_arburst),
+        .cpu_rvalid       (cpu_i_rvalid),
+        .cpu_rready       (cpu_i_rready),
+        .cpu_rdata        (cpu_i_rdata),
+        .cpu_rid          (cpu_i_rid),
+        .cpu_rresp        (cpu_i_rresp),
+        .cpu_rlast        (cpu_i_rlast),
+        // Translation
+        .trans_req_valid  (immu_trans_req_valid),
+        .trans_req_ready  (immu_trans_req_ready),
+        .trans_vaddr      (immu_trans_vaddr),
+        .trans_access_type(immu_trans_access_type),
+        .trans_priv_mode  (immu_trans_priv_mode),
+        .trans_resp_valid (immu_trans_resp_valid),
+        .trans_paddr      (immu_trans_paddr),
+        .trans_fault      (immu_trans_fault),
+        .trans_fault_type (immu_trans_fault_type),
+        // PTW AXI
+        .ptw_arvalid      (immu_ptw_arvalid),
+        .ptw_arready      (immu_ptw_arready),
+        .ptw_araddr       (immu_ptw_araddr),
+        .ptw_arid         (immu_ptw_arid),
+        .ptw_arlen        (immu_ptw_arlen),
+        .ptw_arsize       (immu_ptw_arsize),
+        .ptw_arburst      (immu_ptw_arburst),
+        .ptw_rvalid       (immu_ptw_rvalid),
+        .ptw_rready       (immu_ptw_rready),
+        .ptw_rdata        (immu_ptw_rdata),
+        .ptw_rid          (immu_ptw_rid),
+        .ptw_rresp        (immu_ptw_rresp),
+        .ptw_rlast        (immu_ptw_rlast),
+        // Crossbar M0
+        .xbar_awvalid     (m_awvalid[0]),
+        .xbar_awready     (m_awready[0]),
+        .xbar_awaddr      (m_awaddr[0*ADDR_W +: ADDR_W]),
+        .xbar_awid        (m_awid[0*ID_W +: ID_W]),
+        .xbar_awlen       (m_awlen[0*8 +: 8]),
+        .xbar_awsize      (m_awsize[0*3 +: 3]),
+        .xbar_awburst     (m_awburst[0*2 +: 2]),
+        .xbar_wvalid      (m_wvalid[0]),
+        .xbar_wready      (m_wready[0]),
+        .xbar_wdata       (m_wdata[0*DATA_W +: DATA_W]),
+        .xbar_wstrb       (m_wstrb[0*STRB_W +: STRB_W]),
+        .xbar_wlast       (m_wlast[0]),
+        .xbar_bvalid      (m_bvalid[0]),
+        .xbar_bready      (m_bready[0]),
+        .xbar_bid         (m_bid[0*ID_W +: ID_W]),
+        .xbar_bresp       (m_bresp[0*2 +: 2]),
+        .xbar_arvalid     (m_arvalid[0]),
+        .xbar_arready     (m_arready[0]),
+        .xbar_araddr      (m_araddr[0*ADDR_W +: ADDR_W]),
+        .xbar_arid        (m_arid[0*ID_W +: ID_W]),
+        .xbar_arlen       (m_arlen[0*8 +: 8]),
+        .xbar_arsize      (m_arsize[0*3 +: 3]),
+        .xbar_arburst     (m_arburst[0*2 +: 2]),
+        .xbar_rvalid      (m_rvalid[0]),
+        .xbar_rready      (m_rready[0]),
+        .xbar_rdata       (m_rdata[0*DATA_W +: DATA_W]),
+        .xbar_rid         (m_rid[0*ID_W +: ID_W]),
+        .xbar_rresp       (m_rresp[0*2 +: 2]),
+        .xbar_rlast       (m_rlast[0])
+    );
+
+    // =========================================================================
+    // D-MMU (Master 1): CPU D-port → MMU → Crossbar
+    // =========================================================================
+    // Translation interface wires (D-MMU)
+    logic        dmmu_trans_req_valid;
+    logic        dmmu_trans_req_ready;
+    logic [31:0] dmmu_trans_vaddr;
+    logic [1:0]  dmmu_trans_access_type;
+    logic        dmmu_trans_priv_mode;
+    logic        dmmu_trans_resp_valid;
+    logic [31:0] dmmu_trans_paddr;
+    logic        dmmu_trans_fault;
+    logic [1:0]  dmmu_trans_fault_type;
+
+    // PTW AXI wires (D-MMU)
+    logic              dmmu_ptw_arvalid;
+    logic              dmmu_ptw_arready;
+    logic [ADDR_W-1:0] dmmu_ptw_araddr;
+    logic [ID_W-1:0]   dmmu_ptw_arid;
+    logic [7:0]        dmmu_ptw_arlen;
+    logic [2:0]        dmmu_ptw_arsize;
+    logic [1:0]        dmmu_ptw_arburst;
+    logic              dmmu_ptw_rvalid;
+    logic              dmmu_ptw_rready;
+    logic [DATA_W-1:0] dmmu_ptw_rdata;
+    logic [ID_W-1:0]   dmmu_ptw_rid;
+    logic [1:0]        dmmu_ptw_rresp;
+    logic              dmmu_ptw_rlast;
+
+    // Unused PTW write channel wires (D-MMU)
+    logic              dmmu_ptw_awvalid;
+    logic              dmmu_ptw_awready;
+    logic [ADDR_W-1:0] dmmu_ptw_awaddr;
+    logic [ID_W-1:0]   dmmu_ptw_awid;
+    logic [7:0]        dmmu_ptw_awlen;
+    logic [2:0]        dmmu_ptw_awsize;
+    logic [1:0]        dmmu_ptw_awburst;
+    logic              dmmu_ptw_wvalid;
+    logic              dmmu_ptw_wready;
+    logic [DATA_W-1:0] dmmu_ptw_wdata;
+    logic [STRB_W-1:0] dmmu_ptw_wstrb;
+    logic              dmmu_ptw_wlast;
+    logic              dmmu_ptw_bvalid;
+    logic              dmmu_ptw_bready;
+    logic [ID_W-1:0]   dmmu_ptw_bid;
+    logic [1:0]        dmmu_ptw_bresp;
+
+    mmu_axi_bridge #(.AXI_ID_W(ID_W)) u_dmmu_bridge (
+        .clk              (clk),
+        .srst             (srst),
+        .trans_req_valid  (dmmu_trans_req_valid),
+        .trans_req_ready  (dmmu_trans_req_ready),
+        .trans_vaddr      (dmmu_trans_vaddr),
+        .trans_access_type(dmmu_trans_access_type),
+        .trans_priv_mode  (dmmu_trans_priv_mode),
+        .trans_resp_valid (dmmu_trans_resp_valid),
+        .trans_paddr      (dmmu_trans_paddr),
+        .trans_fault      (dmmu_trans_fault),
+        .trans_fault_type (dmmu_trans_fault_type),
+        .ptw_arvalid      (dmmu_ptw_arvalid),
+        .ptw_arready      (dmmu_ptw_arready),
+        .ptw_araddr       (dmmu_ptw_araddr),
+        .ptw_arid         (dmmu_ptw_arid),
+        .ptw_arlen        (dmmu_ptw_arlen),
+        .ptw_arsize       (dmmu_ptw_arsize),
+        .ptw_arburst      (dmmu_ptw_arburst),
+        .ptw_rvalid       (dmmu_ptw_rvalid),
+        .ptw_rready       (dmmu_ptw_rready),
+        .ptw_rdata        (dmmu_ptw_rdata),
+        .ptw_rid          (dmmu_ptw_rid),
+        .ptw_rresp        (dmmu_ptw_rresp),
+        .ptw_rlast        (dmmu_ptw_rlast),
+        .ptw_awvalid      (dmmu_ptw_awvalid),
+        .ptw_awready      (1'b0),
+        .ptw_awaddr       (dmmu_ptw_awaddr),
+        .ptw_awid         (dmmu_ptw_awid),
+        .ptw_awlen        (dmmu_ptw_awlen),
+        .ptw_awsize       (dmmu_ptw_awsize),
+        .ptw_awburst      (dmmu_ptw_awburst),
+        .ptw_wvalid       (dmmu_ptw_wvalid),
+        .ptw_wready       (1'b0),
+        .ptw_wdata        (dmmu_ptw_wdata),
+        .ptw_wstrb        (dmmu_ptw_wstrb),
+        .ptw_wlast        (dmmu_ptw_wlast),
+        .ptw_bvalid       (1'b0),
+        .ptw_bready       (dmmu_ptw_bready),
+        .ptw_bid          ('0),
+        .ptw_bresp        ('0),
+        .satp             (satp),
+        .sfence_valid     (1'b0),
+        .sfence_vaddr     ('0),
+        .sfence_asid      ('0),
+        .mxr              (1'b0),
+        .sum              (1'b0)
+    );
+
+    cpu_axi_adapter #(.IS_IPORT(1'b0)) u_dmmu_adapter (
+        .clk              (clk),
+        .srst             (srst),
+        // CPU side
+        .cpu_awvalid      (cpu_d_awvalid),
+        .cpu_awready      (cpu_d_awready),
+        .cpu_awaddr       (cpu_d_awaddr),
+        .cpu_awid         (cpu_d_awid),
+        .cpu_awlen        (cpu_d_awlen),
+        .cpu_awsize       (cpu_d_awsize),
+        .cpu_awburst      (cpu_d_awburst),
+        .cpu_wvalid       (cpu_d_wvalid),
+        .cpu_wready       (cpu_d_wready),
+        .cpu_wdata        (cpu_d_wdata),
+        .cpu_wstrb        (cpu_d_wstrb),
+        .cpu_wlast        (cpu_d_wlast),
+        .cpu_bvalid       (cpu_d_bvalid),
+        .cpu_bready       (cpu_d_bready),
+        .cpu_bid          (cpu_d_bid),
+        .cpu_bresp        (cpu_d_bresp),
+        .cpu_arvalid      (cpu_d_arvalid),
+        .cpu_arready      (cpu_d_arready),
+        .cpu_araddr       (cpu_d_araddr),
+        .cpu_arid         (cpu_d_arid),
+        .cpu_arlen        (cpu_d_arlen),
+        .cpu_arsize       (cpu_d_arsize),
+        .cpu_arburst      (cpu_d_arburst),
+        .cpu_rvalid       (cpu_d_rvalid),
+        .cpu_rready       (cpu_d_rready),
+        .cpu_rdata        (cpu_d_rdata),
+        .cpu_rid          (cpu_d_rid),
+        .cpu_rresp        (cpu_d_rresp),
+        .cpu_rlast        (cpu_d_rlast),
+        // Translation
+        .trans_req_valid  (dmmu_trans_req_valid),
+        .trans_req_ready  (dmmu_trans_req_ready),
+        .trans_vaddr      (dmmu_trans_vaddr),
+        .trans_access_type(dmmu_trans_access_type),
+        .trans_priv_mode  (dmmu_trans_priv_mode),
+        .trans_resp_valid (dmmu_trans_resp_valid),
+        .trans_paddr      (dmmu_trans_paddr),
+        .trans_fault      (dmmu_trans_fault),
+        .trans_fault_type (dmmu_trans_fault_type),
+        // PTW AXI
+        .ptw_arvalid      (dmmu_ptw_arvalid),
+        .ptw_arready      (dmmu_ptw_arready),
+        .ptw_araddr       (dmmu_ptw_araddr),
+        .ptw_arid         (dmmu_ptw_arid),
+        .ptw_arlen        (dmmu_ptw_arlen),
+        .ptw_arsize       (dmmu_ptw_arsize),
+        .ptw_arburst      (dmmu_ptw_arburst),
+        .ptw_rvalid       (dmmu_ptw_rvalid),
+        .ptw_rready       (dmmu_ptw_rready),
+        .ptw_rdata        (dmmu_ptw_rdata),
+        .ptw_rid          (dmmu_ptw_rid),
+        .ptw_rresp        (dmmu_ptw_rresp),
+        .ptw_rlast        (dmmu_ptw_rlast),
+        // Crossbar M1
+        .xbar_awvalid     (m_awvalid[1]),
+        .xbar_awready     (m_awready[1]),
+        .xbar_awaddr      (m_awaddr[1*ADDR_W +: ADDR_W]),
+        .xbar_awid        (m_awid[1*ID_W +: ID_W]),
+        .xbar_awlen       (m_awlen[1*8 +: 8]),
+        .xbar_awsize      (m_awsize[1*3 +: 3]),
+        .xbar_awburst     (m_awburst[1*2 +: 2]),
+        .xbar_wvalid      (m_wvalid[1]),
+        .xbar_wready      (m_wready[1]),
+        .xbar_wdata       (m_wdata[1*DATA_W +: DATA_W]),
+        .xbar_wstrb       (m_wstrb[1*STRB_W +: STRB_W]),
+        .xbar_wlast       (m_wlast[1]),
+        .xbar_bvalid      (m_bvalid[1]),
+        .xbar_bready      (m_bready[1]),
+        .xbar_bid         (m_bid[1*ID_W +: ID_W]),
+        .xbar_bresp       (m_bresp[1*2 +: 2]),
+        .xbar_arvalid     (m_arvalid[1]),
+        .xbar_arready     (m_arready[1]),
+        .xbar_araddr      (m_araddr[1*ADDR_W +: ADDR_W]),
+        .xbar_arid        (m_arid[1*ID_W +: ID_W]),
+        .xbar_arlen       (m_arlen[1*8 +: 8]),
+        .xbar_arsize      (m_arsize[1*3 +: 3]),
+        .xbar_arburst     (m_arburst[1*2 +: 2]),
+        .xbar_rvalid      (m_rvalid[1]),
+        .xbar_rready      (m_rready[1]),
+        .xbar_rdata       (m_rdata[1*DATA_W +: DATA_W]),
+        .xbar_rid         (m_rid[1*ID_W +: ID_W]),
+        .xbar_rresp       (m_rresp[1*2 +: 2]),
+        .xbar_rlast       (m_rlast[1])
+    );
+
+    // =========================================================================
+    // DMA master (Master 2) — tie off until DMA controller is integrated
+    // =========================================================================
+    assign m_awvalid[2]                   = 1'b0;
+    assign m_awaddr[2*ADDR_W +: ADDR_W]  = '0;
+    assign m_awid[2*ID_W +: ID_W]        = '0;
+    assign m_awlen[2*8 +: 8]             = '0;
+    assign m_awsize[2*3 +: 3]            = '0;
+    assign m_awburst[2*2 +: 2]           = '0;
+    assign m_wvalid[2]                   = 1'b0;
+    assign m_wdata[2*DATA_W +: DATA_W]   = '0;
+    assign m_wstrb[2*STRB_W +: STRB_W]  = '0;
+    assign m_wlast[2]                    = 1'b0;
+    assign m_bready[2]                   = 1'b1;
+    assign m_arvalid[2]                  = 1'b0;
+    assign m_araddr[2*ADDR_W +: ADDR_W] = '0;
+    assign m_arid[2*ID_W +: ID_W]       = '0;
+    assign m_arlen[2*8 +: 8]            = '0;
+    assign m_arsize[2*3 +: 3]           = '0;
+    assign m_arburst[2*2 +: 2]          = '0;
+    assign m_rready[2]                   = 1'b1;
 
     // =========================================================================
     // AXI4 Crossbar (from AXI4_Crossbar repo)

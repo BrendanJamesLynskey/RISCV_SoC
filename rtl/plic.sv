@@ -98,9 +98,7 @@ module plic #(
                         // Per-source priority: offset 0x10 + i*4
                         if (reg_offset >= 12'h010 &&
                             reg_offset < (12'h010 + N_SOURCES * 4)) begin
-                            automatic int idx;
-                            idx = (reg_offset - 12'h010) >> 2;
-                            priorities[idx] <= reg_wdata[2:0];
+                            priorities[(reg_offset - 12'h010) >> 2] <= reg_wdata[2:0];
                         end
                     end
                 endcase
@@ -124,9 +122,7 @@ module plic #(
             default: begin
                 if (reg_offset >= 12'h010 &&
                     reg_offset < (12'h010 + N_SOURCES * 4)) begin
-                    automatic int idx;
-                    idx = (reg_offset - 12'h010) >> 2;
-                    reg_rdata = {29'b0, priorities[idx]};
+                    reg_rdata = {29'b0, priorities[(reg_offset - 12'h010) >> 2]};
                 end
             end
         endcase
