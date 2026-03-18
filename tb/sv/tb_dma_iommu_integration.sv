@@ -139,7 +139,8 @@ module tb_dma_iommu_integration;
         .cpu_d_rdata   (cd_rdata),
         .cpu_d_rid     (cd_rid),
         .cpu_d_rresp   (cd_rresp),
-        .cpu_d_rlast   (cd_rlast)
+        .cpu_d_rlast   (cd_rlast),
+        .cpu_enable    (1'b0)
     );
 
     // ---- Shared state ----

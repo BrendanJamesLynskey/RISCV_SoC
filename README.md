@@ -99,7 +99,12 @@ RISCV_SoC/
 │   │   ├── tb_riscv_soc_top.sv # Top-level integration TB
 │   │   ├── tb_axi_sram.sv      # SRAM unit TB (6 tests)
 │   │   ├── tb_plic.sv          # PLIC unit TB (8 tests)
-│   │   └── tb_sys_reset.sv     # Reset unit TB (5 tests)
+│   │   ├── tb_sys_reset.sv     # Reset unit TB (5 tests)
+│   │   ├── tb_cpu_integration.sv    # CPU firmware TB (4 tests)
+│   │   ├── tb_mmu_integration.sv    # MMU bypass TB (5 tests)
+│   │   ├── tb_dma_iommu_integration.sv # DMA+IOMMU TB (5 tests)
+│   │   ├── tb_periph_integration.sv # Peripheral TB (7 tests)
+│   │   └── tb_fullsystem.sv        # Full-system firmware TB (7 tests)
 │   └── cocotb/
 │       ├── test_axi_sram/      # 6 CocoTB tests
 │       ├── test_plic/          # 6 CocoTB tests
@@ -108,7 +113,12 @@ RISCV_SoC/
 │   ├── run_all_sv.sh           # Run all SV testbenches
 │   ├── run_all_cocotb.sh       # Run all CocoTB tests
 │   └── run_all.sh              # Run everything
-├── firmware/                   # Firmware .hex files
+├── firmware/
+│   ├── gen_fulltest.py         # Full-system firmware generator
+│   ├── fulltest.hex            # Generated firmware (29 RV32I instructions)
+│   ├── gen_test_basic.py       # Basic test firmware generator
+│   └── test_basic.hex          # Basic test firmware
+├── filelist_full.txt           # Iverilog compile file list
 ├── docs/
 │   └── RISCV_SoC_Integration_Report.md
 ├── CLAUDE_CODE_INSTRUCTIONS.md
@@ -143,13 +153,33 @@ RISCV_SoC/
 
 ## Test Summary
 
-| Module | SV Tests | CocoTB Tests | Total |
-|--------|----------|-------------|-------|
-| `sys_reset` | 5 | 3 | 8 |
-| `plic` | 8 | 6 | 14 |
-| `axi_sram` | 6 | 6 | 12 |
-| `riscv_soc_top` | 9 | — | 9 |
-| **Total** | **28** | **15** | **43** |
+| Testbench | Sim Binary | Tests | Description |
+|-----------|-----------|-------|-------------|
+| `tb_riscv_soc_top` | `sim_soc_top` | 8 | Reset, SRAM, PLIC, GPIO, UART tie-offs |
+| `tb_cpu_integration` | `sim_cpu_int` | 4 | CPU firmware execution, SRAM write-back |
+| `tb_mmu_integration` | `sim_mmu_int` | 5 | MMU bypass mode, AXI read/write paths |
+| `tb_dma_iommu_integration` | `sim_dma_iommu` | 5 | DMA transfer, IOMMU passthrough, IRQ |
+| `tb_periph_integration` | `sim_periph_int` | 7 | GPIO, UART, Timer, PLIC register access |
+| `tb_fullsystem` | `sim_fullsystem` | 7 | Full firmware: SRAM, GPIO, Timer, PLIC, completion marker |
+| **Total** | | **36** | |
+
+The full-system test boots the CPU autonomously, executing 29 RV32I instructions that exercise SRAM read/write, GPIO output, timer interrupt generation through the PLIC, and a completion marker — proving all subsystems work together in a single simulation run.
+
+### Firmware Generation
+
+```bash
+python3 firmware/gen_fulltest.py   # Generates firmware/fulltest.hex (29 instructions)
+```
+
+### Full Build and Run
+
+```bash
+iverilog -g2012 -Wall \
+    -I ~/Claude_sandbox/RISCV_RV32IMC_5stage/rtl/pkg \
+    -I ~/Claude_sandbox/RISCV_RV32IMC_5stage/rtl/core \
+    -c filelist_full.txt -o sim_fullsystem
+echo "finish" | vvp sim_fullsystem
+```
 
 ## Integration Strategy
 

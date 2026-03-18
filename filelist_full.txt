@@ -1,0 +1,73 @@
+# Package files (must be compiled first)
+rtl/soc_pkg.sv
+rtl/soc_xbar_pkg.sv
+../MMU/rtl/mmu_pkg.sv
+../RISCV_DMA/rtl/dma_pkg.sv
+../RISCV_IOMMU/rtl/iommu_pkg.sv
+
+# RISCV_SoC glue logic
+rtl/sys_reset.sv
+rtl/axi_sram.sv
+rtl/axi_periph_bridge.sv
+rtl/plic.sv
+rtl/lru_tracker.sv
+rtl/soc_xbar_wrapper.sv
+rtl/mmu_axi_bridge.sv
+rtl/cpu_axi_adapter.sv
+rtl/dma_iommu_bridge.sv
+rtl/cpu_subsystem.sv
+rtl/periph_subsystem.sv
+rtl/riscv_soc_top.sv
+
+# CPU core (BRV32P RV32IMC)
+../RISCV_RV32IMC_5stage/rtl/core/alu.v
+../RISCV_RV32IMC_5stage/rtl/core/compressed_decoder.v
+../RISCV_RV32IMC_5stage/rtl/core/branch_predictor.v
+../RISCV_RV32IMC_5stage/rtl/core/csr.v
+../RISCV_RV32IMC_5stage/rtl/core/decoder.v
+../RISCV_RV32IMC_5stage/rtl/core/brv32p_core.v
+../RISCV_RV32IMC_5stage/rtl/core/hazard_unit.v
+../RISCV_RV32IMC_5stage/rtl/core/regfile.v
+../RISCV_RV32IMC_5stage/rtl/core/muldiv.v
+../RISCV_RV32IMC_5stage/rtl/cache/dcache.v
+../RISCV_RV32IMC_5stage/rtl/cache/icache.v
+../RISCV_RV32IMC_5stage/rtl/periph/gpio.v
+../RISCV_RV32IMC_5stage/rtl/periph/uart.v
+../RISCV_RV32IMC_5stage/rtl/periph/timer.v
+
+# AXI4 Crossbar
+../AXI4_Crossbar/rtl/axi_addr_decoder.sv
+../AXI4_Crossbar/rtl/axi_r_path.sv
+../AXI4_Crossbar/rtl/axi_w_path.sv
+../AXI4_Crossbar/rtl/axi_xbar_top.sv
+../AXI4_Crossbar/rtl/axi_arbiter.sv
+../AXI4_Crossbar/rtl/axi_err_slave.sv
+
+# MMU
+../MMU/rtl/permission_checker.sv
+../MMU/rtl/page_table_walker.sv
+../MMU/rtl/tlb.sv
+../MMU/rtl/mmu_top.sv
+
+# Cache Controller MESI (not instantiated in SoC; excluded to avoid lru_tracker conflict)
+
+# DMA
+../RISCV_DMA/rtl/dma_fifo.sv
+../RISCV_DMA/rtl/dma_axi_master.sv
+../RISCV_DMA/rtl/dma_reg_file.sv
+../RISCV_DMA/rtl/dma_arbiter.sv
+../RISCV_DMA/rtl/dma_top.sv
+../RISCV_DMA/rtl/dma_channel.sv
+
+# IOMMU
+../RISCV_IOMMU/rtl/iotlb.sv
+../RISCV_IOMMU/rtl/device_context_cache.sv
+../RISCV_IOMMU/rtl/io_ptw.sv
+../RISCV_IOMMU/rtl/io_permission_checker.sv
+../RISCV_IOMMU/rtl/fault_handler.sv
+../RISCV_IOMMU/rtl/iommu_reg_file.sv
+../RISCV_IOMMU/rtl/iommu_core.sv
+../RISCV_IOMMU/rtl/iommu_axi_wrapper.sv
+
+# Testbench
+tb/sv/tb_fullsystem.sv
