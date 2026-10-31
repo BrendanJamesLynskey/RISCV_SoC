@@ -119,7 +119,6 @@ RISCV_SoC/
 ├── filelist_full.txt           # Iverilog compile file list
 ├── docs/
 │   └── RISCV_SoC_Integration_Report.md
-├── CLAUDE_CODE_INSTRUCTIONS.md
 ├── .gitignore
 └── README.md
 ```
@@ -220,6 +219,13 @@ vvp sim_soc
 - **Boot ROM**: Replace SRAM0 with a true ROM containing bootloader code.
 - **Watchdog timer**: Add a watchdog for system reliability.
 - **SPI/I2C**: Extend peripheral bridge with additional interfaces.
+
+## How this was built
+
+This SoC was written quickly with AI assistance (Claude Code) in March 2026, from a written specification, as one
+of a set of SoC components. Its testbenches pass as described above, but unlike the
+[5-stage core](https://github.com/BrendanJamesLynskey/RISCV_RV32IMC_5stage), which I have since reviewed line by line
+and re-verified, it has not had that review: treat it as a working sketch rather than verified IP.
 
 ## Licence
 
